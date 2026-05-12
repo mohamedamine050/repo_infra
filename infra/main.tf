@@ -144,10 +144,24 @@ print("Hello from TEST script")
 EOT
 }
 
+resource "local_file" "glue_script_2" {
+  filename = "${path.module}/glue_etl_processing.py"
+  content  = <<-EOT
+print("Hello from PROCESSING script")
+EOT
+}
+
 data "archive_file" "glue_script_zip" {
   type        = "zip"
   source_file = local_file.glue_script.filename
   output_path = "${path.module}/glue_etl_test.zip"
+}
+
+resource "aws_s3_object" "glue_script_2" {
+  bucket       = aws_s3_bucket.scripts.id
+  key          = "scripts/glue_etl_processing.py"
+  source       = local_file.glue_script_2.filename
+  content_type = "text/x-python"
 }
 
 resource "aws_s3_object" "glue_script" {
@@ -266,7 +280,39 @@ resource "aws_glue_job" "etl" {
     "--enable-metrics"                   = ""
     "--TempDir"                          = var.create_temp_bucket ? "s3://${aws_s3_bucket.temp[0].bucket}/temp/" : "s3://${aws_s3_bucket.output.bucket}/temp/"
     "--output_path"                      = "s3://${aws_s3_bucket.output.bucket}/output/"
+ 
+
+resource "aws_glue_job" "processing" {
+  name              = "data-pipeline-processing-${random_string.suffix.result}"
+  role_arn          = aws_iam_role.glue.arn
+  glue_version      = "5.0"
+  number_of_workers = 2
+  worker_type       = "G.1X"
+  timeout           = 60
+  max_retries       = 0
+  execution_class   = "STANDARD"
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_etl_processing.py"
+    python_version  = "3"
   }
+
+  default_arguments = {
+    "--job-language"                     = "python"
+    "--enable-continuous-cloudwatch-log" = "true"
+    "--enable-continuous-log-filter"     = "true"
+    "--enable-metrics"                   = ""
+    "--TempDir"                          = var.create_temp_bucket ? "s3://${aws_s3_bucket.temp[0].bucket}/temp/" : "s3://${aws_s3_bucket.output.bucket}/temp/"
+    "--output_path"                      = "s3://${aws_s3_bucket.output.bucket}/output/"
+  }
+
+  depends_on = [
+    aws_s3_bucket.scripts,
+    aws_s3_bucket.output,
+    aws_s3_object.glue_script_2
+  ]
+} }
 
   depends_on = [
     aws_s3_bucket.scripts,

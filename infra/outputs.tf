@@ -36,6 +36,14 @@ output "glue_job_arn" {
   value = aws_glue_job.etl.arn
 }
 
+output "glue_job_processing_name" {
+  value = aws_glue_job.processing.id
+}
+
+output "glue_job_processing_arn" {
+  value = aws_glue_job.processing.arn
+}
+
 output "glue_role_name" {
   value = aws_iam_role.glue.name
 }
