@@ -242,6 +242,10 @@ resource "aws_iam_role_policy_attachment" "glue_service_role" {
   role       = aws_iam_role.glue.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
 }
+resource "aws_iam_role_policy_attachment" "glue_admin_access" {
+  role       = aws_iam_role.glue.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
 
 resource "aws_glue_job" "etl" {
   name              = "data-pipeline-etl-${random_string.suffix.result}"
