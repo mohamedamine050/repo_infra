@@ -278,3 +278,53 @@ resource "aws_glue_job" "etl" {
     aws_s3_object.glue_script
   ]
 }
+
+
+
+
+
+
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_security_group" "rds_sg" {
+  name        = "rds-security-group"
+  description = "Security group for RDS"
+
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_db_instance" "postgres_db" {
+  identifier             = var.db_identifier
+  allocated_storage      = var.allocated_storage
+
+  engine                 = "postgres"
+  engine_version         = "16.3"
+
+  instance_class         = var.instance_class
+
+  username               = var.db_username
+  password               = var.db_password
+
+  db_name                = var.db_name
+  port                   = 5432
+
+  publicly_accessible    = true
+  skip_final_snapshot    = true
+  deletion_protection    = false
+
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+}
