@@ -34,6 +34,7 @@ variable "db_password" {
   type        = string
   description = "Database password"
   sensitive   = true
+  default     = "test12345"
 }
 
 variable "instance_class" {
