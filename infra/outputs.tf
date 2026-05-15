@@ -47,3 +47,19 @@ output "glue_role_arn" {
 output "random_suffix" {
   value = random_string.suffix.result
 }
+
+
+output "rds_endpoint" {
+  description = "RDS endpoint"
+  value       = aws_db_instance.postgres_db.endpoint
+}
+
+output "rds_port" {
+  description = "RDS port"
+  value       = aws_db_instance.postgres_db.port
+}
+
+output "database_name" {
+  description = "Database name"
+  value       = aws_db_instance.postgres_db.db_name
+}
