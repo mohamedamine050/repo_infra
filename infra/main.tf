@@ -284,9 +284,7 @@ resource "aws_glue_job" "etl" {
 
 
 
-provider "aws" {
-  region = var.aws_region
-}
+
 
 resource "aws_security_group" "rds_sg" {
   name        = "rds-security-group"
