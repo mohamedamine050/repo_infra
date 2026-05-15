@@ -11,11 +11,6 @@ variable "create_temp_bucket" {
 }
 
 
-variable "aws_region" {
-  type        = string
-  description = "AWS region"
-  default     = "eu-west-1"
-}
 
 variable "db_identifier" {
   type        = string
