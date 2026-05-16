@@ -282,12 +282,8 @@ resource "aws_glue_job" "etl" {
 
 
 
-
-
-
 resource "aws_security_group" "rds_sg" {
-  name = "rds-security-group-${random_string.suffix.result}"
-
+  name        = "rds-security-group-${random_string.suffix.result}"
   description = "Security group for RDS"
 
   ingress {
@@ -325,13 +321,10 @@ resource "random_string" "db_name_suffix" {
   special = false
 }
 
-locals {
-  db_name = "db${random_string.db_name_suffix.result}"
-}
-
-resource "random_string" "db_username" {
+resource "random_string" "db_username_suffix" {
   length  = 8
   upper   = false
+  numeric = true
   special = false
 }
 
@@ -341,26 +334,28 @@ resource "random_string" "db_password" {
   special = true
 }
 
+locals {
+  db_name     = "db${random_string.db_name_suffix.result}"
+  db_username = "db${random_string.db_username_suffix.result}"
+}
+
 resource "aws_db_instance" "postgres_db" {
-  identifier             = "db-${random_string.db_identifier.result}"
-  allocated_storage      = 20
+  identifier        = "db-${random_string.db_identifier.result}"
+  allocated_storage = 20
 
-  engine                 = "postgres"
-  engine_version         = "16.3"
+  engine         = "postgres"
+  engine_version = "16.3"
+  instance_class = "db.t3.micro"
 
-  instance_class         = "db.t3.micro"
+  username = local.db_username
+  password = random_string.db_password.result
 
-  username               = random_string.db_username.result
-  password               = random_string.db_password.result
+  db_name = local.db_name
+  port    = 5432
 
-  # ✅ FIX IMPORTANT ICI
-  db_name                = local.db_name
-
-  port                   = 5432
-
-  publicly_accessible    = true
-  skip_final_snapshot    = true
-  deletion_protection    = false
+  publicly_accessible = true
+  skip_final_snapshot  = true
+  deletion_protection  = false
 
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 }
