@@ -287,13 +287,16 @@ resource "aws_glue_job" "etl" {
 
 
 resource "aws_security_group" "rds_sg" {
-  name        = "rds-security-group"
+  name = "rds-security-group-${random_string.suffix.result}"
+
   description = "Security group for RDS"
 
   ingress {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
+
+    # TEST ONLY
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -301,7 +304,12 @@ resource "aws_security_group" "rds_sg" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
+
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "rds-security-group"
   }
 }
 
