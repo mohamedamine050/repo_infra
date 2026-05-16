@@ -285,7 +285,6 @@ resource "aws_glue_job" "etl" {
 
 
 
-
 resource "aws_security_group" "rds_sg" {
   name = "rds-security-group-${random_string.suffix.result}"
 
@@ -296,7 +295,7 @@ resource "aws_security_group" "rds_sg" {
     to_port     = 5432
     protocol    = "tcp"
 
-    # TEST ONLY
+    # TEST ONLY (à restreindre en prod)
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -319,10 +318,15 @@ resource "random_string" "db_identifier" {
   special = false
 }
 
-resource "random_string" "db_name" {
-  length  = 8
+resource "random_string" "db_name_suffix" {
+  length  = 6
   upper   = false
+  numeric = true
   special = false
+}
+
+locals {
+  db_name = "db${random_string.db_name_suffix.result}"
 }
 
 resource "random_string" "db_username" {
@@ -349,7 +353,9 @@ resource "aws_db_instance" "postgres_db" {
   username               = random_string.db_username.result
   password               = random_string.db_password.result
 
-  db_name                = random_string.db_name.result
+  # ✅ FIX IMPORTANT ICI
+  db_name                = local.db_name
+
   port                   = 5432
 
   publicly_accessible    = true
