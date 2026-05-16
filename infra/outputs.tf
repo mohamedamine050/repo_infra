@@ -59,7 +59,24 @@ output "rds_port" {
   value       = aws_db_instance.postgres_db.port
 }
 
+
+output "rds_identifier" {
+  description = "RDS instance identifier"
+  value       = aws_db_instance.postgres_db.identifier
+}
+
 output "database_name" {
   description = "Database name"
   value       = aws_db_instance.postgres_db.db_name
+}
+
+output "database_username" {
+  description = "Database username"
+  value       = aws_db_instance.postgres_db.username
+}
+
+output "database_password" {
+  description = "Database password (généré aléatoirement)"
+  value       = random_string.db_password.result
+  sensitive   = true
 }

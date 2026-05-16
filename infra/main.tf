@@ -313,19 +313,43 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
+resource "random_string" "db_identifier" {
+  length  = 8
+  upper   = false
+  special = false
+}
+
+resource "random_string" "db_name" {
+  length  = 8
+  upper   = false
+  special = false
+}
+
+resource "random_string" "db_username" {
+  length  = 8
+  upper   = false
+  special = false
+}
+
+resource "random_string" "db_password" {
+  length  = 16
+  upper   = true
+  special = true
+}
+
 resource "aws_db_instance" "postgres_db" {
-  identifier             = var.db_identifier
-  allocated_storage      = var.allocated_storage
+  identifier             = "db-${random_string.db_identifier.result}"
+  allocated_storage      = 20
 
   engine                 = "postgres"
   engine_version         = "16.3"
 
-  instance_class         = var.instance_class
+  instance_class         = "db.t3.micro"
 
-  username               = var.db_username
-  password               = var.db_password
+  username               = random_string.db_username.result
+  password               = random_string.db_password.result
 
-  db_name                = var.db_name
+  db_name                = random_string.db_name.result
   port                   = 5432
 
   publicly_accessible    = true

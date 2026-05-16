@@ -12,39 +12,3 @@ variable "create_temp_bucket" {
 
 
 
-variable "db_identifier" {
-  type        = string
-  description = "RDS identifier"
-  default     = "postgres-rds"
-}
-
-variable "db_name" {
-  type        = string
-  description = "Database name"
-  default     = "mydatabase"
-}
-
-variable "db_username" {
-  type        = string
-  description = "Database username"
-  default     = "dbadmin"
-}
-
-variable "db_password" {
-  type        = string
-  description = "Database password"
-  sensitive   = true
-  default     = "test12345"
-}
-
-variable "instance_class" {
-  type        = string
-  description = "RDS instance class"
-  default     = "db.t3.micro"
-}
-
-variable "allocated_storage" {
-  type        = number
-  description = "Storage size in GB"
-  default     = 20
-}
