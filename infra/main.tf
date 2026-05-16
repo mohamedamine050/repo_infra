@@ -157,6 +157,20 @@ resource "aws_s3_object" "glue_script" {
   content_type = "text/x-python"
 }
 
+resource "local_file" "glue_script_product" {
+  filename = "${path.module}/glue_product_etl.py"
+  content  = <<-EOT
+print("Hello from PRODUCT Glue script")
+EOT
+}
+
+resource "aws_s3_object" "glue_script_product" {
+  bucket       = aws_s3_bucket.scripts.id
+  key          = "scripts/glue_product_etl.py"
+  source       = local_file.glue_script_product.filename
+  content_type = "text/x-python"
+}
+
 resource "aws_iam_role" "glue" {
   name = "data-pipeline-glue-role-${random_string.suffix.result}"
 
@@ -276,6 +290,38 @@ resource "aws_glue_job" "etl" {
     aws_s3_bucket.scripts,
     aws_s3_bucket.output,
     aws_s3_object.glue_script
+  ]
+}
+
+resource "aws_glue_job" "etl_product" {
+  name              = "data-pipeline-etl-product-${random_string.suffix.result}"
+  role_arn          = aws_iam_role.glue.arn
+  glue_version      = "5.0"
+  number_of_workers = 2
+  worker_type       = "G.1X"
+  timeout           = 60
+  max_retries       = 0
+  execution_class   = "STANDARD"
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_product_etl.py"
+    python_version  = "3"
+  }
+
+  default_arguments = {
+    "--job-language"                     = "python"
+    "--enable-continuous-cloudwatch-log" = "true"
+    "--enable-continuous-log-filter"     = "true"
+    "--enable-metrics"                   = ""
+    "--TempDir"                          = var.create_temp_bucket ? "s3://${aws_s3_bucket.temp[0].bucket}/temp/" : "s3://${aws_s3_bucket.output.bucket}/temp/"
+    "--output_path"                      = "s3://${aws_s3_bucket.output.bucket}/output/"
+  }
+
+  depends_on = [
+    aws_s3_bucket.scripts,
+    aws_s3_bucket.output,
+    aws_s3_object.glue_script_product
   ]
 }
 

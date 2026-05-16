@@ -28,12 +28,26 @@ output "glue_script_s3_uri" {
   value = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_etl_test.py"
 }
 
+output "glue_script_product_s3_uri" {
+  value = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_product_etl.py"
+}
+
 output "glue_job_name" {
   value = aws_glue_job.etl.id
 }
 
 output "glue_job_arn" {
   value = aws_glue_job.etl.arn
+}
+
+output "glue_job_product_name" {
+  description = "Product Glue job name"
+  value       = aws_glue_job.etl_product.name
+}
+
+output "glue_job_product_arn" {
+  description = "Product Glue job ARN"
+  value       = aws_glue_job.etl_product.arn
 }
 
 output "glue_role_name" {
