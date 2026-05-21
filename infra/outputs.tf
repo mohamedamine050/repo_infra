@@ -65,6 +65,22 @@ output "random_suffix" {
   value = random_string.suffix.result
 }
 
+output "glue_script_sales_s3_uri" {
+  value = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_sales_etl.py"
+}
+
+
+
+output "glue_job_sales_name" {
+  description = "Sales Glue job name"
+  value       = aws_glue_job.etl_sales.name
+}
+
+output "glue_job_sales_arn" {
+  description = "Sales Glue job ARN"
+  value       = aws_glue_job.etl_sales.arn
+}
+
 
 output "rds_endpoint" {
   description = "RDS endpoint"
@@ -97,5 +113,7 @@ output "database_password" {
   value       = random_string.db_password.result
   sensitive   = true
 }
+
+
 
 
