@@ -32,9 +32,6 @@ output "glue_script_product_s3_uri" {
   value = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_product_etl.py"
 }
 
-output "glue_script_sales_s3_uri" {
-  value = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_sales_etl.py"
-}
 
 output "glue_job_name" {
   value = aws_glue_job.etl.id
@@ -54,15 +51,7 @@ output "glue_job_product_arn" {
   value       = aws_glue_job.etl_product.arn
 }
 
-output "glue_job_sales_name" {
-  description = "Sales Glue job name"
-  value       = aws_glue_job.etl_sales.name
-}
 
-output "glue_job_sales_arn" {
-  description = "Sales Glue job ARN"
-  value       = aws_glue_job.etl_sales.arn
-}
 
 output "glue_role_name" {
   value = aws_iam_role.glue.name
