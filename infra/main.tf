@@ -327,6 +327,56 @@ resource "aws_glue_job" "etl_product" {
   ]
 }
 
+resource "local_file" "glue_script_sales" {
+  filename = "${path.module}/glue_sales_etl.py"
+  content  = <<-EOT
+print("Hello from SALES Glue script")
+EOT
+}
+
+resource "aws_s3_object" "glue_script_sales" {
+  bucket       = aws_s3_bucket.scripts.id
+  key          = "scripts/glue_sales_etl.py"
+  source       = local_file.glue_script_sales.filename
+  content_type = "text/x-python"
+}
+
+
+
+
+resource "aws_glue_job" "etl_sales" {
+  name              = "data-pipeline-etl-sales-${random_string.suffix.result}"
+  role_arn          = aws_iam_role.glue.arn
+  glue_version      = "5.0"
+  number_of_workers = 2
+  worker_type       = "G.1X"
+  timeout           = 60
+  max_retries       = 0
+  execution_class   = "STANDARD"
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_sales_etl.py"
+    python_version  = "3"
+  }
+
+  default_arguments = {
+    "--job-language"                     = "python"
+    "--enable-continuous-cloudwatch-log" = "true"
+    "--enable-continuous-log-filter"     = "true"
+    "--enable-metrics"                   = ""
+    "--TempDir"                          = var.create_temp_bucket ? "s3://${aws_s3_bucket.temp[0].bucket}/temp/" : "s3://${aws_s3_bucket.output.bucket}/temp/"
+    "--output_path"                      = "s3://${aws_s3_bucket.output.bucket}/output/"
+  }
+
+  depends_on = [
+    aws_s3_bucket.scripts,
+    aws_s3_bucket.output,
+    aws_s3_object.glue_script_sales
+  ]
+}
+
+
 
 
 
@@ -356,6 +406,9 @@ resource "aws_security_group" "rds_sg" {
     Name = "rds-security-group"
   }
 }
+
+
+
 
 resource "random_string" "db_identifier" {
   length  = 8
@@ -387,6 +440,8 @@ locals {
   db_name     = "db${random_string.db_name_suffix.result}"
   db_username = "db${random_string.db_username_suffix.result}"
 }
+
+
 
 resource "aws_db_instance" "postgres_db" {
   identifier        = "db-${random_string.db_identifier.result}"
