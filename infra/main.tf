@@ -344,38 +344,68 @@ resource "aws_s3_object" "glue_script_sales" {
 
 
 
-resource "aws_glue_job" "etl_sales" {
-  name              = "data-pipeline-etl-sales-${random_string.suffix.result}"
-  role_arn          = aws_iam_role.glue.arn
-  glue_version      = "5.0"
-  number_of_workers = 2
-  worker_type       = "G.1X"
-  timeout           = 60
-  max_retries       = 0
-  execution_class   = "STANDARD"
-
-  command {
-    name            = "glueetl"
-    script_location = "s3://${aws_s3_bucket.scripts.bucket}/scripts/glue_sales_etl.py"
-    python_version  = "3"
-  }
-
-  default_arguments = {
-    "--job-language"                     = "python"
-    "--enable-continuous-cloudwatch-log" = "true"
-    "--enable-continuous-log-filter"     = "true"
-    "--enable-metrics"                   = ""
-    "--TempDir"                          = var.create_temp_bucket ? "s3://${aws_s3_bucket.temp[0].bucket}/temp/" : "s3://${aws_s3_bucket.output.bucket}/temp/"
-    "--output_path"                      = "s3://${aws_s3_bucket.output.bucket}/output/"
-  }
-
-  depends_on = [
-    aws_s3_bucket.scripts,
-    aws_s3_bucket.output,
-    aws_s3_object.glue_script_sales
-  ]
+resource "aws_s3_bucket" "mwaa" {
+  bucket = "mwaa-bucket-${random_string.suffix.result}"
 }
 
+resource "aws_security_group" "mwaa" {
+  name   = "mwaa-sg-${random_string.suffix.result}"
+  vpc_id = data.aws_vpc.default.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_iam_role" "mwaa" {
+  name = "mwaa-role-${random_string.suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "airflow.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "mwaa_glue" {
+  role       = aws_iam_role.mwaa.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "mwaa_s3" {
+  role       = aws_iam_role.mwaa.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_mwaa_environment" "airflow" {
+  name              = "etl-airflow-${random_string.suffix.result}"
+  environment_class = "mw1.small"
+
+  airflow_version = "2.9.2"
+
+  execution_role_arn = aws_iam_role.mwaa.arn
+
+  source_bucket_arn = aws_s3_bucket.mwaa.arn
+  dag_s3_path       = "dags"
+
+  network_configuration {
+    security_group_ids = [aws_security_group.mwaa.id]
+    subnet_ids         = data.aws_subnets.default.ids
+  }
+
+  webserver_access_mode = "PUBLIC_ONLY"
+
+  max_workers = 2
+  schedulers  = 1
+}
 
 
 
