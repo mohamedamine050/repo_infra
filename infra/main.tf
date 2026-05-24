@@ -1,4 +1,3 @@
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Remote backend — state stored in S3, locking via DynamoDB
 # (Provisioned by the bootstrap/ folder)
@@ -40,12 +39,32 @@ provider "aws" {
   region = var.aws_region
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Data sources
+# ─────────────────────────────────────────────────────────────────────────────
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Random suffix
+# ─────────────────────────────────────────────────────────────────────────────
 resource "random_string" "suffix" {
   length  = 18
   upper   = false
   special = false
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# S3 Buckets
+# ─────────────────────────────────────────────────────────────────────────────
 resource "aws_s3_bucket" "scripts" {
   bucket        = "data-pipeline-scripts-${random_string.suffix.result}"
   force_destroy = true
@@ -137,6 +156,9 @@ resource "aws_s3_bucket_public_access_block" "temp" {
   restrict_public_buckets = true
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Glue scripts (local files + S3 upload)
+# ─────────────────────────────────────────────────────────────────────────────
 resource "local_file" "glue_script" {
   filename = "${path.module}/glue_etl_test.py"
   content  = <<-EOT
@@ -171,8 +193,9 @@ resource "aws_s3_object" "glue_script_product" {
   content_type = "text/x-python"
 }
 
-
-
+# ─────────────────────────────────────────────────────────────────────────────
+# IAM — Glue
+# ─────────────────────────────────────────────────────────────────────────────
 resource "aws_iam_role" "glue" {
   name = "data-pipeline-glue-role-${random_string.suffix.result}"
 
@@ -258,11 +281,15 @@ resource "aws_iam_role_policy_attachment" "glue_service_role" {
   role       = aws_iam_role.glue.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
 }
+
 resource "aws_iam_role_policy_attachment" "glue_admin_access" {
   role       = aws_iam_role.glue.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Glue Jobs
+# ─────────────────────────────────────────────────────────────────────────────
 resource "aws_glue_job" "etl" {
   name              = "data-pipeline-etl-${random_string.suffix.result}"
   role_arn          = aws_iam_role.glue.arn
@@ -327,23 +354,9 @@ resource "aws_glue_job" "etl_product" {
   ]
 }
 
-resource "local_file" "glue_script_sales" {
-  filename = "${path.module}/glue_sales_etl.py"
-  content  = <<-EOT
-print("Hello from SALES Glue script")
-EOT
-}
-
-resource "aws_s3_object" "glue_script_sales" {
-  bucket       = aws_s3_bucket.scripts.id
-  key          = "scripts/glue_sales_etl.py"
-  source       = local_file.glue_script_sales.filename
-  content_type = "text/x-python"
-}
-
-
-
-
+# ─────────────────────────────────────────────────────────────────────────────
+# MWAA (Airflow)
+# ─────────────────────────────────────────────────────────────────────────────
 resource "aws_s3_bucket" "mwaa" {
   bucket = "mwaa-bucket-${random_string.suffix.result}"
 }
@@ -388,8 +401,7 @@ resource "aws_iam_role_policy_attachment" "mwaa_s3" {
 resource "aws_mwaa_environment" "airflow" {
   name              = "etl-airflow-${random_string.suffix.result}"
   environment_class = "mw1.small"
-
-  airflow_version = "2.9.2"
+  airflow_version   = "2.9.2"
 
   execution_role_arn = aws_iam_role.mwaa.arn
 
@@ -407,10 +419,9 @@ resource "aws_mwaa_environment" "airflow" {
   schedulers  = 1
 }
 
-
-
-
-
+# ─────────────────────────────────────────────────────────────────────────────
+# RDS (PostgreSQL)
+# ─────────────────────────────────────────────────────────────────────────────
 resource "aws_security_group" "rds_sg" {
   name        = "rds-security-group-${random_string.suffix.result}"
   description = "Security group for RDS"
@@ -419,7 +430,6 @@ resource "aws_security_group" "rds_sg" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-
     # TEST ONLY (à restreindre en prod)
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -428,7 +438,6 @@ resource "aws_security_group" "rds_sg" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -436,9 +445,6 @@ resource "aws_security_group" "rds_sg" {
     Name = "rds-security-group"
   }
 }
-
-
-
 
 resource "random_string" "db_identifier" {
   length  = 8
@@ -471,8 +477,6 @@ locals {
   db_username = "db${random_string.db_username_suffix.result}"
 }
 
-
-
 resource "aws_db_instance" "postgres_db" {
   identifier        = "db-${random_string.db_identifier.result}"
   allocated_storage = 20
@@ -487,11 +491,9 @@ resource "aws_db_instance" "postgres_db" {
   db_name = local.db_name
   port    = 5432
 
-  publicly_accessible = true
+  publicly_accessible  = true
   skip_final_snapshot  = true
   deletion_protection  = false
 
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 }
-
-
