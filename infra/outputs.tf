@@ -114,6 +114,18 @@ output "database_password" {
   sensitive   = true
 }
 
+output "mwaa_env_name" {
+  value = aws_mwaa_environment.airflow.name
+}
+
+output "mwaa_bucket_name" {
+  value = aws_s3_bucket.mwaa.bucket
+}
+
+output "mwaa_web_url" {
+  value = aws_mwaa_environment.airflow.webserver_url
+}
+
 
 
 
