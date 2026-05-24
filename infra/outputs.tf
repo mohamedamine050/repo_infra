@@ -72,12 +72,11 @@ output "database_password" {
   value       = random_string.db_password.result
   sensitive   = true
 }
-output "mwaa_env_name" {
-  value = aws_mwaa_environment.airflow.name
+output "step_functions_name" {
+  description = "Nom de la state machine Step Functions"
+  value       = aws_sfn_state_machine.etl_pipeline.name
 }
-output "mwaa_bucket_name" {
-  value = aws_s3_bucket.mwaa.bucket
-}
-output "mwaa_web_url" {
-  value = aws_mwaa_environment.airflow.webserver_url
+output "step_functions_arn" {
+  description = "ARN de la state machine Step Functions"
+  value       = aws_sfn_state_machine.etl_pipeline.arn
 }
