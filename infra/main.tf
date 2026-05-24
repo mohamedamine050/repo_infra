@@ -223,10 +223,7 @@ resource "aws_iam_role_policy" "glue" {
       {
         Sid    = "S3ReadScripts"
         Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
+        Action = ["s3:GetObject", "s3:ListBucket"]
         Resource = [
           aws_s3_bucket.scripts.arn,
           "${aws_s3_bucket.scripts.arn}/*"
@@ -235,12 +232,7 @@ resource "aws_iam_role_policy" "glue" {
       {
         Sid    = "S3WriteOutput"
         Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
+        Action = ["s3:PutObject", "s3:DeleteObject", "s3:GetObject", "s3:ListBucket"]
         Resource = [
           aws_s3_bucket.output.arn,
           "${aws_s3_bucket.output.arn}/*"
@@ -249,12 +241,7 @@ resource "aws_iam_role_policy" "glue" {
       {
         Sid    = "S3TempAccess"
         Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
+        Action = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:ListBucket"]
         Resource = var.create_temp_bucket ? [
           aws_s3_bucket.temp[0].arn,
           "${aws_s3_bucket.temp[0].arn}/*"
@@ -266,11 +253,7 @@ resource "aws_iam_role_policy" "glue" {
       {
         Sid    = "GlueLogging"
         Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
+        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "*"
       }
     ]
@@ -355,68 +338,105 @@ resource "aws_glue_job" "etl_product" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MWAA (Airflow)
+# IAM — Step Functions
 # ─────────────────────────────────────────────────────────────────────────────
-resource "aws_s3_bucket" "mwaa" {
-  bucket = "mwaa-bucket-${random_string.suffix.result}"
-}
-
-resource "aws_security_group" "mwaa" {
-  name   = "mwaa-sg-${random_string.suffix.result}"
-  vpc_id = data.aws_vpc.default.id
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_iam_role" "mwaa" {
-  name = "mwaa-role-${random_string.suffix.result}"
+resource "aws_iam_role" "step_functions" {
+  name = "step-functions-role-${random_string.suffix.result}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "airflow.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "states.amazonaws.com" }
+      Action    = "sts:AssumeRole"
     }]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "mwaa_glue" {
-  role       = aws_iam_role.mwaa.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess"
+resource "aws_iam_role_policy" "step_functions" {
+  name = "step-functions-policy-${random_string.suffix.result}"
+  role = aws_iam_role.step_functions.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "GlueJobAccess"
+        Effect = "Allow"
+        Action = [
+          "glue:StartJobRun",
+          "glue:GetJobRun",
+          "glue:GetJobRuns",
+          "glue:BatchStopJobRun"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
-resource "aws_iam_role_policy_attachment" "mwaa_s3" {
-  role       = aws_iam_role.mwaa.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Step Functions — ETL Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_sfn_state_machine" "etl_pipeline" {
+  name     = "etl-pipeline-${random_string.suffix.result}"
+  role_arn = aws_iam_role.step_functions.arn
 
-resource "aws_mwaa_environment" "airflow" {
-  name              = "etl-airflow-${random_string.suffix.result}"
-  environment_class = "mw1.small"
-  airflow_version   = "2.9.2"
+  definition = jsonencode({
+    Comment = "ETL Pipeline: run test job then product job"
+    StartAt = "RunTestETL"
+    States = {
+      RunTestETL = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::glue:startJobRun.sync"
+        Parameters = {
+          JobName = aws_glue_job.etl.name
+        }
+        Next = "RunProductETL"
+        Catch = [{
+          ErrorEquals = ["States.ALL"]
+          Next        = "PipelineFailed"
+        }]
+      }
+      RunProductETL = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::glue:startJobRun.sync"
+        Parameters = {
+          JobName = aws_glue_job.etl_product.name
+        }
+        Next = "PipelineSucceeded"
+        Catch = [{
+          ErrorEquals = ["States.ALL"]
+          Next        = "PipelineFailed"
+        }]
+      }
+      PipelineSucceeded = {
+        Type = "Succeed"
+      }
+      PipelineFailed = {
+        Type  = "Fail"
+        Error = "ETLPipelineError"
+        Cause = "One or more Glue jobs failed"
+      }
+    }
+  })
 
-  execution_role_arn = aws_iam_role.mwaa.arn
-
-  source_bucket_arn = aws_s3_bucket.mwaa.arn
-  dag_s3_path       = "dags"
-
-  network_configuration {
-    security_group_ids = [aws_security_group.mwaa.id]
-    subnet_ids         = data.aws_subnets.default.ids
-  }
-
-  webserver_access_mode = "PUBLIC_ONLY"
-
-  max_workers = 2
-  schedulers  = 1
+  depends_on = [
+    aws_glue_job.etl,
+    aws_glue_job.etl_product
+  ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
