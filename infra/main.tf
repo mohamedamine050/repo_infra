@@ -405,13 +405,6 @@ resource "aws_lambda_function" "api_fetcher" {
   runtime       = "python3.12"
   timeout       = 60
 
-  environment {
-    variables = {
-      RAW_BUCKET  = aws_s3_bucket.output.bucket
-      CONFIG_PATH = "s3://${aws_s3_bucket.scripts.bucket}/config/config.json"
-    }
-  }
-
   depends_on = [
     aws_s3_bucket.scripts,
     aws_s3_bucket.output,
