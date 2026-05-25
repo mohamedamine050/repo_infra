@@ -338,6 +338,88 @@ resource "aws_glue_job" "etl_product" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# IAM — Lambda
+# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_iam_role" "lambda" {
+  name = "lambda-role-${random_string.suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda" {
+  name = "lambda-policy-${random_string.suffix.result}"
+  role = aws_iam_role.lambda.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3ReadLambdaZip"
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.scripts.arn}/lambda/*"
+      },
+      {
+        Sid    = "S3WriteOutput"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.output.arn,
+          "${aws_s3_bucket.output.arn}/*"
+        ]
+      },
+      {
+        Sid    = "Logs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lambda Function
+# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_lambda_function" "api_fetcher" {
+  s3_bucket     = aws_s3_bucket.scripts.bucket
+  s3_key        = "lambda/lambda_function.zip"
+  function_name = "api-fetcher-${random_string.suffix.result}"
+  role          = aws_iam_role.lambda.arn
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.12"
+  timeout       = 60
+
+  environment {
+    variables = {
+      RAW_BUCKET  = aws_s3_bucket.output.bucket
+      CONFIG_PATH = "s3://${aws_s3_bucket.scripts.bucket}/config/config.json"
+    }
+  }
+
+  depends_on = [
+    aws_s3_bucket.scripts,
+    aws_s3_bucket.output,
+    aws_iam_role_policy.lambda
+  ]
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # IAM — Step Functions
 # ─────────────────────────────────────────────────────────────────────────────
 resource "aws_iam_role" "step_functions" {
@@ -372,6 +454,12 @@ resource "aws_iam_role_policy" "step_functions" {
         Resource = "*"
       },
       {
+        Sid      = "LambdaInvoke"
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = aws_lambda_function.api_fetcher.arn
+      },
+      {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
         Action = [
@@ -395,16 +483,31 @@ resource "aws_sfn_state_machine" "etl_pipeline" {
   role_arn = aws_iam_role.step_functions.arn
 
   definition = jsonencode({
-    Comment = "ETL Pipeline: run test job then product job"
-    StartAt = "RunTestETL"
+    Comment = "ETL Pipeline: Lambda fetch → Glue test → Glue product"
+    StartAt = "FetchRawData"
     States = {
+      FetchRawData = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.api_fetcher.arn
+          Payload      = {}
+        }
+        ResultPath = "$.lambdaResult"
+        Next       = "RunTestETL"
+        Catch = [{
+          ErrorEquals = ["States.ALL"]
+          Next        = "PipelineFailed"
+        }]
+      }
       RunTestETL = {
         Type     = "Task"
         Resource = "arn:aws:states:::glue:startJobRun.sync"
         Parameters = {
           JobName = aws_glue_job.etl.name
         }
-        Next = "RunProductETL"
+        ResultPath = "$.glueTestResult"
+        Next       = "RunProductETL"
         Catch = [{
           ErrorEquals = ["States.ALL"]
           Next        = "PipelineFailed"
@@ -416,7 +519,8 @@ resource "aws_sfn_state_machine" "etl_pipeline" {
         Parameters = {
           JobName = aws_glue_job.etl_product.name
         }
-        Next = "PipelineSucceeded"
+        ResultPath = "$.glueProductResult"
+        Next       = "PipelineSucceeded"
         Catch = [{
           ErrorEquals = ["States.ALL"]
           Next        = "PipelineFailed"
@@ -428,15 +532,61 @@ resource "aws_sfn_state_machine" "etl_pipeline" {
       PipelineFailed = {
         Type  = "Fail"
         Error = "ETLPipelineError"
-        Cause = "One or more Glue jobs failed"
+        Cause = "One or more steps failed"
       }
     }
   })
 
   depends_on = [
+    aws_lambda_function.api_fetcher,
     aws_glue_job.etl,
     aws_glue_job.etl_product
   ]
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IAM — EventBridge
+# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_iam_role" "eventbridge" {
+  name = "eventbridge-role-${random_string.suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "scheduler.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "eventbridge" {
+  name = "eventbridge-policy-${random_string.suffix.result}"
+  role = aws_iam_role.eventbridge.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "StartStepFunctions"
+      Effect   = "Allow"
+      Action   = ["states:StartExecution"]
+      Resource = aws_sfn_state_machine.etl_pipeline.arn
+    }]
+  })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EventBridge — Schedule Step Functions toutes les heures
+# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_cloudwatch_event_rule" "hourly" {
+  name                = "etl-pipeline-hourly-${random_string.suffix.result}"
+  schedule_expression = "rate(1 hour)"
+}
+
+resource "aws_cloudwatch_event_target" "step_functions" {
+  rule     = aws_cloudwatch_event_rule.hourly.name
+  arn      = aws_sfn_state_machine.etl_pipeline.arn
+  role_arn = aws_iam_role.eventbridge.arn
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -450,7 +600,6 @@ resource "aws_security_group" "rds_sg" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    # TEST ONLY (à restreindre en prod)
     cidr_blocks = ["0.0.0.0/0"]
   }
 
