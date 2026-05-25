@@ -396,6 +396,34 @@ resource "aws_iam_role_policy" "lambda" {
 # ─────────────────────────────────────────────────────────────────────────────
 # Lambda Function
 # ─────────────────────────────────────────────────────────────────────────────
+resource "local_file" "lambda_placeholder" {
+  filename = "${path.module}/lambda_function.py"
+  content  = <<-EOT
+def lambda_handler(event, context):
+    print("Hello from Lambda placeholder")
+    return {
+        "statusCode": 200,
+        "body": "placeholder - will be replaced by CD pipeline"
+    }
+EOT
+}
+
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_file = local_file.lambda_placeholder.filename
+  output_path = "${path.module}/lambda_function.zip"
+  depends_on  = [local_file.lambda_placeholder]
+}
+
+resource "aws_s3_object" "lambda_zip" {
+  bucket = aws_s3_bucket.scripts.id
+  key    = "lambda/lambda_function.zip"
+  source = data.archive_file.lambda_zip.output_path
+  etag   = data.archive_file.lambda_zip.output_md5
+
+  depends_on = [data.archive_file.lambda_zip]
+}
+
 resource "aws_lambda_function" "api_fetcher" {
   s3_bucket     = aws_s3_bucket.scripts.bucket
   s3_key        = "lambda/lambda_function.zip"
@@ -406,12 +434,10 @@ resource "aws_lambda_function" "api_fetcher" {
   timeout       = 60
 
   depends_on = [
-    aws_s3_bucket.scripts,
-    aws_s3_bucket.output,
+    aws_s3_object.lambda_zip,
     aws_iam_role_policy.lambda
   ]
 }
-
 # ─────────────────────────────────────────────────────────────────────────────
 # IAM — Step Functions
 # ─────────────────────────────────────────────────────────────────────────────
