@@ -435,8 +435,13 @@ resource "aws_lambda_function" "api_fetcher" {
 
   depends_on = [
     aws_s3_object.lambda_zip,
-    aws_iam_role_policy.lambda
+    aws_iam_role_policy.lambda,
+    aws_iam_role_policy_attachment.lambda_s3_full_access
   ]
+}
+resource "aws_iam_role_policy_attachment" "lambda_s3_full_access" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 # ─────────────────────────────────────────────────────────────────────────────
 # IAM — Step Functions
@@ -493,6 +498,7 @@ resource "aws_iam_role_policy" "step_functions" {
     ]
   })
 }
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step Functions — ETL Pipeline
